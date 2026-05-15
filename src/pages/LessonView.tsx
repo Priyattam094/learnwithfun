@@ -11,8 +11,9 @@ import type { Lesson } from "../types";
 export function LessonView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, profile, isLoading: authLoading } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [lessonLoading, setLessonLoading] = useState(true); // BUG FIX #3: separate flag
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [urlLoading, setUrlLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,50 +24,84 @@ export function LessonView() {
   );
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    // BUG FIX #2: also check !profile — on reload, user is null briefly while
+    // getSession() runs but profile is still in sessionStorage. Guard both so
+    // we don't redirect to login before the session check completes.
+    if (!authLoading && !user && !profile) {
       navigate(`/login?redirect=/lesson/${id}`);
     }
-  }, [user, authLoading, id]);
+  }, [user, profile, authLoading, id]);
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    setLessonLoading(true);
     supabase
       .from("lessons")
       .select("*")
       .eq("id", id)
       .single()
-      .then(({ data }) => setLesson(data));
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) setError("Lesson not found.");
+        setLesson(data);
+        setLessonLoading(false); // BUG FIX #3: always clears, even when data is null
+      });
+    return () => { cancelled = true; };
   }, [id]);
 
   useEffect(() => {
-    if (!lesson || !user || accessLoading) return;
-    if (!hasAccess) return;
+    if (!lesson || !user || accessLoading || !hasAccess) return;
 
-    setUrlLoading(true);
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-signed-url`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({ lesson_id: lesson.id }),
+    let cancelled = false;
+
+    // BUG FIX #4: try/finally ensures urlLoading always clears;
+    // cancellation flag prevents setState on unmounted component
+    async function fetchSignedUrl() {
+      setUrlLoading(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-signed-url`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({ lesson_id: lesson!.id }),
+          }
+        );
+        if (cancelled) return;
+        if (res.ok) {
+          const { url } = await res.json();
+          setSignedUrl(url);
+        } else {
+          setError("Could not load lesson. Please try again.");
         }
-      );
-
-      if (res.ok) {
-        const { url } = await res.json();
-        setSignedUrl(url);
-      } else {
-        setError("Could not load lesson. Please try again.");
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[LessonView] fetchSignedUrl failed:", err);
+          setError("Could not load lesson. Please try again.");
+        }
+      } finally {
+        if (!cancelled) setUrlLoading(false);
       }
-      setUrlLoading(false);
-    });
-  }, [lesson, user, hasAccess, accessLoading]);
+    }
 
-  const isLoading = authLoading || !lesson || accessLoading || urlLoading;
+    fetchSignedUrl();
+
+    // BUG FIX #5: refresh signed URL every 9 min before 10-min expiry
+    const refreshInterval = setInterval(fetchSignedUrl, 9 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(refreshInterval);
+    };
+  }, [lesson?.id, user?.id, hasAccess, accessLoading]);
+
+  // BUG FIX #3: use lessonLoading flag instead of !lesson so a null result clears the spinner
+  const isLoading = authLoading || lessonLoading || accessLoading || urlLoading;
 
   if (isLoading) {
     return (

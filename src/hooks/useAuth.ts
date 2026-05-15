@@ -12,6 +12,8 @@ export function useAuthInit() {
       if (session?.user) {
         fetchProfile(session.user.id);
       } else {
+        // BUG FIX #2: clear stale persisted profile when session is confirmed absent
+        setProfile(null);
         setInitialized();
       }
     });
@@ -26,10 +28,8 @@ export function useAuthInit() {
         } else if (event === "SIGNED_OUT") {
           clear();
         } else if (event === "TOKEN_REFRESHED" && session?.user) {
-          // Silent token refresh on tab focus — only update token, never touch loading state
           setUser(session.user);
         }
-        // INITIAL_SESSION is handled by getSession() above — ignore here
       }
     );
 
@@ -37,13 +37,19 @@ export function useAuthInit() {
   }, []);
 
   async function fetchProfile(userId: string) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    setProfile(data);
-    setInitialized();  // mark ready — only called once, never resets
+    // BUG FIX #1: try/finally ensures setInitialized() always runs even if
+    // the profiles query fails — prevents app from being stuck in loading forever
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+      if (error) console.error("[useAuthInit] fetchProfile failed:", error.message);
+      setProfile(data ?? null);
+    } finally {
+      setInitialized();
+    }
   }
 }
 

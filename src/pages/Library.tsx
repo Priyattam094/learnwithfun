@@ -25,11 +25,16 @@ export function Library() {
 
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
+    // BUG FIX #9: cancellation guard prevents setState on unmounted component
     supabase
       .from("purchases")
       .select("lesson_id")
       .eq("user_id", user.id)
-      .then(({ data }) => setPurchases((data ?? []).map((p) => p.lesson_id)));
+      .then(({ data }) => {
+        if (!cancelled) setPurchases((data ?? []).map((p) => p.lesson_id));
+      });
+    return () => { cancelled = true; };
   }, [user?.id]);
 
   function handleBuy(lesson: Lesson) {

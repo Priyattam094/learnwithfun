@@ -15,33 +15,39 @@ export function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!authLoading && !user) navigate("/login?redirect=/my-lessons");
-  }, [user, authLoading]);
+    // BUG FIX #2: guard with !profile to prevent premature redirect on reload
+    if (!authLoading && !user && !profile) navigate("/login?redirect=/my-lessons");
+  }, [user, profile, authLoading]);
 
   useEffect(() => {
     if (!user) return;
     async function fetchData() {
+      // BUG FIX #7: try/finally ensures spinner always clears even on error
       setIsLoading(true);
-      const [purchasesRes, subRes] = await Promise.all([
-        supabase
-          .from("purchases")
-          .select("lesson_id, lessons(*)")
-          .eq("user_id", user!.id),
-        supabase
-          .from("subscriptions")
-          .select("*")
-          .eq("user_id", user!.id)
-          .eq("is_active", true)
-          .gt("expires_at", new Date().toISOString())
-          .maybeSingle(),
-      ]);
-
-      const purchased = (purchasesRes.data ?? [])
-        .map((p: any) => p.lessons)
-        .filter(Boolean);
-      setLessons(purchased);
-      setSubscription(subRes.data);
-      setIsLoading(false);
+      try {
+        const [purchasesRes, subRes] = await Promise.all([
+          supabase
+            .from("purchases")
+            .select("lesson_id, lessons(*)")
+            .eq("user_id", user!.id),
+          supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("user_id", user!.id)
+            .eq("is_active", true)
+            .gt("expires_at", new Date().toISOString())
+            .maybeSingle(),
+        ]);
+        const purchased = (purchasesRes.data ?? [])
+          .map((p: any) => p.lessons)
+          .filter(Boolean);
+        setLessons(purchased);
+        setSubscription(subRes.data);
+      } catch (err) {
+        console.error("[Dashboard] fetchData failed:", err);
+      } finally {
+        setIsLoading(false);
+      }
     }
     fetchData();
   }, [user?.id]);
