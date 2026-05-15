@@ -1,5 +1,6 @@
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
+import { BottomNav } from "./BottomNav";
 
 export function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -18,8 +19,13 @@ export function PageWrapper({ children }: { children: React.ReactNode }) {
         style={{ animation: "pageEnter 300ms ease" }}
       >
         {children}
+        {/* Bottom nav spacer on mobile */}
+        <div className="sm:hidden" style={{ height: "72px" }} aria-hidden="true" />
       </main>
-      <Footer />
+      <div className="hidden sm:block">
+        <Footer />
+      </div>
+      <BottomNav />
       <style>{`
         @keyframes pageEnter {
           from { opacity: 0; transform: translateY(10px); }

@@ -60,30 +60,6 @@ export function Navbar() {
             justifyContent: "space-between",
           }}
         >
-          {/* Mobile: Hamburger */}
-          <button
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
-            style={{
-              display: "none",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "44px",
-              height: "44px",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--border-visible)",
-              background: "var(--bg-surface)",
-              color: "var(--text-primary)",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-            className="flex sm:hidden"
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M3 5h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2z" clipRule="evenodd" />
-            </svg>
-          </button>
-
           {/* Logo */}
           <Link
             to="/"
@@ -190,40 +166,10 @@ export function Navbar() {
             )}
           </div>
 
-          {/* Mobile: Avatar or Sign In */}
-          <div className="flex sm:hidden">
-            {user ? (
-              <button
-                onClick={() => navigate("/my-lessons")}
-                aria-label="My lessons"
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "50%",
-                  background: "var(--accent-orange-dim)",
-                  border: "2px solid var(--accent-orange)",
-                  color: "var(--accent-orange)",
-                  fontFamily: "'Baloo 2', sans-serif",
-                  fontWeight: 700,
-                  fontSize: "14px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {user.email?.[0].toUpperCase() ?? "U"}
-              </button>
-            ) : (
-              <Button size="sm" onClick={() => navigate("/login")} aria-label="Sign in">
-                Sign In
-              </Button>
-            )}
-          </div>
         </div>
       </nav>
 
-      {/* Mobile Drawer Overlay */}
+      {/* Mobile Drawer Overlay — kept for sm+ fallback */}
       {menuOpen && (
         <div
           style={{

@@ -67,9 +67,7 @@ export function LessonCard({
 
   return (
     <div
-      className="reveal"
       style={{
-        transitionDelay: `${index * 50}ms`,
         background: "var(--bg-card)",
         border: "1px solid var(--border-subtle)",
         borderRadius: "var(--radius-lg)",
@@ -79,6 +77,7 @@ export function LessonCard({
         willChange: "transform",
         display: "flex",
         flexDirection: "column",
+        animation: `cardEnter 350ms ease ${index * 60}ms both`,
       }}
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLDivElement;

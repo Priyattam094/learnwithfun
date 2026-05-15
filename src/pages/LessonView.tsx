@@ -7,14 +7,22 @@ import { LockedOverlay } from "../components/lesson/LockedOverlay";
 import { Spinner } from "../components/ui/Spinner";
 import type { Lesson } from "../types";
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+
+function getLessonUrl(lesson: Lesson): string {
+  // storage_path is "lessons/{id}/" — main file is index.html
+  const path = lesson.storage_path.endsWith("/")
+    ? `${lesson.storage_path}index.html`
+    : lesson.storage_path;
+  return `${SUPABASE_URL}/storage/v1/object/public/lesson-content/${path}`;
+}
+
 export function LessonView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, profile, isLoading: authLoading } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [lessonLoading, setLessonLoading] = useState(true);
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
-  const [urlLoading, setUrlLoading] = useState(false);
   const [error, setError] = useState("");
   const [topBarVisible, setTopBarVisible] = useState(true);
   const [interactionTimer, setInteractionTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -24,7 +32,6 @@ export function LessonView() {
     lesson?.type ?? "free"
   );
 
-  // Auto-hide top bar on mobile after inactivity
   function resetHideTimer() {
     setTopBarVisible(true);
     if (interactionTimer) clearTimeout(interactionTimer);
@@ -60,53 +67,8 @@ export function LessonView() {
     return () => { cancelled = true; };
   }, [id]);
 
-  useEffect(() => {
-    if (!lesson || !user || accessLoading || !hasAccess) return;
-
-    let cancelled = false;
-
-    async function fetchSignedUrl() {
-      setUrlLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-signed-url`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session?.access_token}`,
-            },
-            body: JSON.stringify({ lesson_id: lesson!.id }),
-          }
-        );
-        if (cancelled) return;
-        if (res.ok) {
-          const { url } = await res.json();
-          setSignedUrl(url);
-        } else {
-          setError("Could not load lesson. Please try again.");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[LessonView] fetchSignedUrl failed:", err);
-          setError("Could not load lesson. Please try again.");
-        }
-      } finally {
-        if (!cancelled) setUrlLoading(false);
-      }
-    }
-
-    fetchSignedUrl();
-    const refreshInterval = setInterval(fetchSignedUrl, 9 * 60 * 1000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(refreshInterval);
-    };
-  }, [lesson?.id, user?.id, hasAccess, accessLoading]);
-
-  const isLoading = authLoading || lessonLoading || accessLoading || urlLoading;
+  const isLoading = authLoading || lessonLoading || accessLoading;
+  const lessonUrl = lesson && hasAccess ? getLessonUrl(lesson) : null;
 
   // Loading state
   if (isLoading) {
@@ -134,7 +96,6 @@ export function LessonView() {
         >
           Loading your lesson...
         </p>
-        {/* Skeleton preview */}
         <div
           className="skeleton"
           style={{
@@ -289,9 +250,9 @@ export function LessonView() {
         }}
         className="sm:mx-4 sm:mb-4 mx-0 mb-0 sm:rounded-[var(--radius-lg)] rounded-none"
       >
-        {signedUrl && (
+        {lessonUrl && (
           <iframe
-            src={signedUrl}
+            src={lessonUrl}
             title={lesson?.title ?? "Lesson"}
             style={{ width: "100%", height: "calc(100vh - 88px)", border: "none", display: "block" }}
             sandbox="allow-scripts allow-same-origin"
