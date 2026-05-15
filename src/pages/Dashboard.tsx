@@ -1,124 +1,253 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../lib/supabase";
 import { PageWrapper } from "../components/layout/PageWrapper";
-import { Spinner } from "../components/ui/Spinner";
-import { Button } from "../components/ui/Button";
-import type { Lesson, Subscription } from "../types";
+import { LessonCard, LessonCardSkeleton } from "../components/lesson/LessonCard";
+import type { Lesson } from "../types";
 
 export function Dashboard() {
-  const navigate = useNavigate();
   const { user, profile, isLoading: authLoading } = useAuth();
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const navigate = useNavigate();
+  const [purchases, setPurchases] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // BUG FIX #2: guard with !profile to prevent premature redirect on reload
-    if (!authLoading && !user && !profile) navigate("/login?redirect=/my-lessons");
+    if (!authLoading && !user && !profile) navigate("/login");
   }, [user, profile, authLoading]);
 
   useEffect(() => {
     if (!user) return;
-    async function fetchData() {
-      // BUG FIX #7: try/finally ensures spinner always clears even on error
+    let cancelled = false;
+
+    async function load() {
       setIsLoading(true);
-      try {
-        const [purchasesRes, subRes] = await Promise.all([
-          supabase
-            .from("purchases")
-            .select("lesson_id, lessons(*)")
-            .eq("user_id", user!.id),
-          supabase
-            .from("subscriptions")
-            .select("*")
-            .eq("user_id", user!.id)
-            .eq("is_active", true)
-            .gt("expires_at", new Date().toISOString())
-            .maybeSingle(),
-        ]);
-        const purchased = (purchasesRes.data ?? [])
-          .map((p: any) => p.lessons)
-          .filter(Boolean);
-        setLessons(purchased);
-        setSubscription(subRes.data);
-      } catch (err) {
-        console.error("[Dashboard] fetchData failed:", err);
-      } finally {
+      const { data } = await supabase
+        .from("purchases")
+        .select("lesson_id, lessons(*)")
+        .eq("user_id", user!.id);
+
+      if (!cancelled) {
+        setPurchases((data ?? []).flatMap((p) => p.lessons ?? []));
         setIsLoading(false);
       }
     }
-    fetchData();
+    load();
+    return () => { cancelled = true; };
   }, [user?.id]);
 
-  if (authLoading || isLoading) {
-    return (
-      <PageWrapper>
-        <div className="flex justify-center py-20"><Spinner size="lg" /></div>
-      </PageWrapper>
-    );
-  }
+  const firstName = profile?.full_name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "there";
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
     <PageWrapper>
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="flex items-center gap-4 mb-8">
-          {profile?.avatar_url && (
-            <img src={profile.avatar_url} alt="" className="w-14 h-14 rounded-full" />
-          )}
+      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "48px 24px 80px" }}>
+
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            gap: "16px",
+            marginBottom: "48px",
+          }}
+        >
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">
-              Hi, {profile?.full_name ?? "there"}! 👋
+            <p
+              style={{
+                fontFamily: "'Nunito', sans-serif",
+                fontWeight: 700,
+                fontSize: "13px",
+                color: "var(--accent-orange)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                marginBottom: "8px",
+              }}
+            >
+              {greeting} 👋
+            </p>
+            <h1
+              style={{
+                fontFamily: "'Baloo 2', sans-serif",
+                fontWeight: 700,
+                fontSize: "clamp(28px, 4vw, 40px)",
+                color: "var(--text-primary)",
+                marginBottom: "8px",
+              }}
+            >
+              Welcome back, {firstName}!
             </h1>
-            <p className="text-slate-500">{user?.email}</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "16px" }}>
+              {isLoading ? "Loading your lessons..." : `You own ${purchases.length} lesson${purchases.length !== 1 ? "s" : ""}`}
+            </p>
           </div>
+
+          <button
+            onClick={() => navigate("/library")}
+            aria-label="Browse more lessons"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "12px 24px",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-visible)",
+              borderRadius: "var(--radius-lg)",
+              fontFamily: "'Nunito', sans-serif",
+              fontWeight: 700,
+              fontSize: "15px",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              transition: "all var(--transition-base)",
+              minHeight: "44px",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent-orange)";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent-orange)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-visible)";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
+            }}
+          >
+            + Add More Lessons
+          </button>
         </div>
 
-        {subscription?.is_active && (
-          <div className="bg-gradient-to-r from-violet-600 to-violet-700 text-white rounded-2xl p-5 mb-8 flex items-center gap-4">
-            <span className="text-3xl">⭐</span>
-            <div>
-              <p className="font-bold text-lg">Active Subscription</p>
-              <p className="text-violet-200 text-sm">
-                {subscription.plan} plan · Expires {new Date(subscription.expires_at).toLocaleDateString("en-IN")}
-              </p>
-            </div>
+        {/* Stat row */}
+        {!isLoading && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: "16px",
+              marginBottom: "48px",
+            }}
+            className="sm:grid-cols-4"
+          >
+            {[
+              { label: "Lessons Owned", value: purchases.length, icon: "📚", color: "var(--accent-orange)" },
+              { label: "Subjects", value: new Set(purchases.map((l) => l.subject)).size, icon: "🎓", color: "var(--accent-violet)" },
+              { label: "Alphabets", value: purchases.filter((l) => l.subject === "alphabets").length, icon: "🔤", color: "#FF6B35" },
+              { label: "Numbers", value: purchases.filter((l) => l.subject === "numbers").length, icon: "🔢", color: "#3B82F6" },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "20px 24px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "28px" }}>{stat.icon}</span>
+                  <span
+                    style={{
+                      fontFamily: "'Space Grotesk', sans-serif",
+                      fontWeight: 700,
+                      fontSize: "32px",
+                      color: stat.color,
+                    }}
+                  >
+                    {stat.value}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Nunito', sans-serif",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {stat.label}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        <h2 className="text-xl font-bold text-slate-800 mb-4">My Lessons ({lessons.length})</h2>
+        {/* Lessons grid */}
+        <h2
+          style={{
+            fontFamily: "'Baloo 2', sans-serif",
+            fontWeight: 700,
+            fontSize: "24px",
+            color: "var(--text-primary)",
+            marginBottom: "24px",
+          }}
+        >
+          Your Lessons
+        </h2>
 
-        {lessons.length === 0 ? (
-          <div className="text-center py-20 text-slate-400">
-            <div className="text-5xl mb-4">📚</div>
-            <p className="text-xl mb-4">No lessons yet — browse the library!</p>
-            <Button onClick={() => navigate("/library")} aria-label="Browse library">
-              Browse Library
-            </Button>
+        {isLoading ? (
+          <div
+            style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px" }}
+            className="sm:grid-cols-3 lg:grid-cols-4"
+          >
+            {Array.from({ length: 4 }).map((_, i) => <LessonCardSkeleton key={i} />)}
+          </div>
+        ) : purchases.length === 0 ? (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "80px 24px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "20px",
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-xl)",
+              border: "1px solid var(--border-subtle)",
+            }}
+          >
+            <div style={{ fontSize: "64px" }}>🎒</div>
+            <h3 style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 700, fontSize: "24px", color: "var(--text-primary)" }}>
+              No lessons yet
+            </h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "15px" }}>
+              Browse the library and pick your first lesson
+            </p>
+            <button
+              onClick={() => navigate("/library")}
+              style={{
+                padding: "14px 28px",
+                background: "linear-gradient(135deg, var(--accent-orange), #FF8C42)",
+                border: "none",
+                borderRadius: "var(--radius-lg)",
+                color: "white",
+                fontFamily: "'Nunito', sans-serif",
+                fontWeight: 700,
+                fontSize: "16px",
+                cursor: "pointer",
+                boxShadow: "var(--shadow-orange-glow)",
+                minHeight: "48px",
+              }}
+              aria-label="Browse the library"
+            >
+              Browse Library →
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {lessons.map((lesson) => (
-              <div key={lesson.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="h-36 bg-gradient-to-br from-violet-400 to-violet-600 flex items-center justify-center">
-                  {lesson.thumbnail_url ? (
-                    <img src={lesson.thumbnail_url} alt={lesson.title} loading="lazy" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-5xl">📖</span>
-                  )}
-                </div>
-                <div className="p-4">
-                  <h3 className="font-bold text-slate-800 text-lg mb-3">{lesson.title}</h3>
-                  <Button
-                    className="w-full"
-                    onClick={() => navigate(`/lesson/${lesson.id}`)}
-                    aria-label={`Open ${lesson.title}`}
-                  >
-                    Open Lesson
-                  </Button>
-                </div>
-              </div>
+          <div
+            style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px" }}
+            className="sm:grid-cols-3 lg:grid-cols-4"
+          >
+            {purchases.map((lesson, i) => (
+              <LessonCard
+                key={lesson.id}
+                lesson={lesson}
+                hasPurchased
+                showOpenOnly
+                index={i}
+              />
             ))}
           </div>
         )}

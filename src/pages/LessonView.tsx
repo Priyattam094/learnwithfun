@@ -5,7 +5,6 @@ import { useAuth } from "../hooks/useAuth";
 import { useAccess } from "../hooks/useAccess";
 import { LockedOverlay } from "../components/lesson/LockedOverlay";
 import { Spinner } from "../components/ui/Spinner";
-import { PageWrapper } from "../components/layout/PageWrapper";
 import type { Lesson } from "../types";
 
 export function LessonView() {
@@ -13,20 +12,31 @@ export function LessonView() {
   const navigate = useNavigate();
   const { user, profile, isLoading: authLoading } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [lessonLoading, setLessonLoading] = useState(true); // BUG FIX #3: separate flag
+  const [lessonLoading, setLessonLoading] = useState(true);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [urlLoading, setUrlLoading] = useState(false);
   const [error, setError] = useState("");
+  const [topBarVisible, setTopBarVisible] = useState(true);
+  const [interactionTimer, setInteractionTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const { hasAccess, isLoading: accessLoading } = useAccess(
     id ?? "",
     lesson?.type ?? "free"
   );
 
+  // Auto-hide top bar on mobile after inactivity
+  function resetHideTimer() {
+    setTopBarVisible(true);
+    if (interactionTimer) clearTimeout(interactionTimer);
+    const timer = setTimeout(() => setTopBarVisible(false), 3000);
+    setInteractionTimer(timer);
+  }
+
   useEffect(() => {
-    // BUG FIX #2: also check !profile — on reload, user is null briefly while
-    // getSession() runs but profile is still in sessionStorage. Guard both so
-    // we don't redirect to login before the session check completes.
+    return () => { if (interactionTimer) clearTimeout(interactionTimer); };
+  }, [interactionTimer]);
+
+  useEffect(() => {
     if (!authLoading && !user && !profile) {
       navigate(`/login?redirect=/lesson/${id}`);
     }
@@ -45,7 +55,7 @@ export function LessonView() {
         if (cancelled) return;
         if (error) setError("Lesson not found.");
         setLesson(data);
-        setLessonLoading(false); // BUG FIX #3: always clears, even when data is null
+        setLessonLoading(false);
       });
     return () => { cancelled = true; };
   }, [id]);
@@ -55,8 +65,6 @@ export function LessonView() {
 
     let cancelled = false;
 
-    // BUG FIX #4: try/finally ensures urlLoading always clears;
-    // cancellation flag prevents setState on unmounted component
     async function fetchSignedUrl() {
       setUrlLoading(true);
       try {
@@ -90,8 +98,6 @@ export function LessonView() {
     }
 
     fetchSignedUrl();
-
-    // BUG FIX #5: refresh signed URL every 9 min before 10-min expiry
     const refreshInterval = setInterval(fetchSignedUrl, 9 * 60 * 1000);
 
     return () => {
@@ -100,68 +106,212 @@ export function LessonView() {
     };
   }, [lesson?.id, user?.id, hasAccess, accessLoading]);
 
-  // BUG FIX #3: use lessonLoading flag instead of !lesson so a null result clears the spinner
   const isLoading = authLoading || lessonLoading || accessLoading || urlLoading;
 
+  // Loading state
   if (isLoading) {
     return (
-      <PageWrapper>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Spinner size="lg" />
-        </div>
-      </PageWrapper>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg-base)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "24px",
+        }}
+        aria-busy="true"
+      >
+        <Spinner size="lg" />
+        <p
+          style={{
+            fontFamily: "'Baloo 2', sans-serif",
+            fontSize: "18px",
+            color: "var(--text-secondary)",
+            fontWeight: 600,
+          }}
+        >
+          Loading your lesson...
+        </p>
+        {/* Skeleton preview */}
+        <div
+          className="skeleton"
+          style={{
+            width: "min(90vw, 600px)",
+            height: "200px",
+            borderRadius: "var(--radius-lg)",
+            opacity: 0.5,
+          }}
+        />
+      </div>
     );
   }
 
+  // Locked
   if (!hasAccess && lesson) {
     return (
-      <PageWrapper>
+      <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
         <LockedOverlay lesson={lesson} />
-      </PageWrapper>
+      </div>
     );
   }
 
+  // Error
   if (error) {
     return (
-      <PageWrapper>
-        <div className="flex items-center justify-center min-h-[60vh] text-center px-4">
-          <div>
-            <div className="text-5xl mb-4">⚠️</div>
-            <p className="text-red-600 text-lg">{error}</p>
-          </div>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg-base)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px",
+          textAlign: "center",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "64px", marginBottom: "24px" }}>⚠️</div>
+          <p
+            style={{
+              fontFamily: "'Baloo 2', sans-serif",
+              fontSize: "20px",
+              color: "var(--error)",
+              marginBottom: "24px",
+            }}
+            role="alert"
+          >
+            {error}
+          </p>
+          <button
+            onClick={() => navigate("/library")}
+            style={{
+              fontFamily: "'Nunito', sans-serif",
+              fontWeight: 700,
+              color: "var(--accent-orange)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "16px",
+            }}
+          >
+            ← Back to Library
+          </button>
         </div>
-      </PageWrapper>
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
-      <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg-base)",
+        display: "flex",
+        flexDirection: "column",
+      }}
+      onPointerMove={resetHideTimer}
+      onPointerDown={resetHideTimer}
+    >
+      {/* Top bar */}
+      <div
+        style={{
+          background: "rgba(13, 13, 26, 0.95)",
+          backdropFilter: "blur(20px)",
+          borderBottom: "1px solid var(--border-subtle)",
+          padding: "0 24px",
+          height: "56px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          position: "sticky",
+          top: 0,
+          zIndex: "var(--z-navbar)",
+          transition: "opacity 300ms ease, transform 300ms ease",
+          opacity: topBarVisible ? 1 : 0,
+          transform: topBarVisible ? "translateY(0)" : "translateY(-100%)",
+        }}
+      >
         <button
           onClick={() => navigate("/library")}
-          className="text-slate-300 hover:text-white flex items-center gap-2 text-sm font-medium"
           aria-label="Back to library"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontFamily: "'Nunito', sans-serif",
+            fontWeight: 700,
+            fontSize: "14px",
+            color: "var(--text-secondary)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "8px",
+            borderRadius: "var(--radius-sm)",
+            transition: "color var(--transition-fast)",
+            minHeight: "44px",
+          }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)")}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--text-secondary)")}
         >
           ← Back to Library
         </button>
-        <span className="text-white font-semibold">{lesson?.title}</span>
-        <div className="w-24" />
+
+        <span
+          style={{
+            fontFamily: "'Baloo 2', sans-serif",
+            fontWeight: 600,
+            fontSize: "15px",
+            color: "var(--text-primary)",
+            maxWidth: "50%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {lesson?.title}
+        </span>
+
+        <div style={{ width: "80px" }} aria-hidden="true" />
       </div>
 
-      <div className="flex-1 relative" onContextMenu={(e) => e.preventDefault()}>
+      {/* Lesson iframe */}
+      <div
+        onContextMenu={(e) => e.preventDefault()}
+        style={{
+          flex: 1,
+          position: "relative",
+          border: "1px solid var(--border-subtle)",
+          margin: "0 16px 16px",
+          borderRadius: "var(--radius-lg)",
+          overflow: "hidden",
+        }}
+        className="sm:mx-4 sm:mb-4 mx-0 mb-0 sm:rounded-[var(--radius-lg)] rounded-none"
+      >
         {signedUrl && (
           <iframe
             src={signedUrl}
-            title={lesson?.title}
-            className="w-full h-full min-h-[calc(100vh-56px)]"
+            title={lesson?.title ?? "Lesson"}
+            style={{ width: "100%", height: "calc(100vh - 88px)", border: "none", display: "block" }}
             sandbox="allow-scripts allow-same-origin"
             aria-label={`Lesson: ${lesson?.title}`}
           />
         )}
+
         {/* Watermark */}
         <div
-          className="absolute bottom-4 right-4 text-white text-xs pointer-events-none select-none"
-          style={{ opacity: 0.1 }}
+          style={{
+            position: "absolute",
+            bottom: "12px",
+            right: "16px",
+            color: "white",
+            fontSize: "11px",
+            fontFamily: "'Nunito', sans-serif",
+            opacity: 0.07,
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
           aria-hidden="true"
         >
           {user?.email}
