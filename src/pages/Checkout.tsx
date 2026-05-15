@@ -20,8 +20,9 @@ export function Checkout() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !user) navigate(`/login?redirect=/checkout/${id}`);
-  }, [user, authLoading, id]);
+    // BUG FIX #2: guard with !profile to prevent premature redirect on reload
+    if (!authLoading && !user && !profile) navigate(`/login?redirect=/checkout/${id}`);
+  }, [user, profile, authLoading, id]);
 
   useEffect(() => {
     if (!id) return;
@@ -40,13 +41,15 @@ export function Checkout() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-order`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ lesson_id: lesson.id, order_type: "lesson" }),
         }
@@ -66,11 +69,16 @@ export function Checkout() {
           email: user.email,
         },
         onSuccess: async (response) => {
+          // FIX: pass Authorization header — Supabase gateway rejects Edge Function
+          // calls without auth before they reach the function, causing false "failed" errors
           const verifyRes = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-payment`,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
               body: JSON.stringify(response),
             }
           );
